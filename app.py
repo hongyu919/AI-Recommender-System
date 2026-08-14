@@ -64,9 +64,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Define Base Data Paths
-FOOD_DB_PATH = r"C:\Users\User\Downloads\healthy_foods_database.csv"
-GYM_DB_PATH = r"C:\Users\User\Downloads\megaGymDataset.csv"
+# Use relative paths for cloud deployment
+FOOD_DB_PATH = "healthy_foods_database.csv"
+GYM_DB_PATH = "megaGymDataset.csv"
 
 # ==========================================
 # MODEL DEFINITIONS (Phase 1)
@@ -81,9 +81,15 @@ class DataPipeline:
         try:
             food_df = pd.read_csv(self.food_db_path)
         except Exception as e:
-            st.error(f"⚠️ Error: Could not find {self.food_db_path}. Please check file path. {e}")
+            st.error(f"Error: Could not find '{self.food_db_path}'. Please check file path. {e}")
             return None, None, None
             
+        # Validate required columns for food
+        required_food_cols = ['food_name', 'food_type', 'calories', 'protein_g']
+        if not all(col in food_df.columns for col in required_food_cols):
+            st.error("Food dataset is missing required columns! Please check the CSV format.")
+            return None, None, None
+
         if 'Unnamed: 0' in food_df.columns:
             food_df = food_df.rename(columns={'Unnamed: 0': 'Food_ID'})
         elif 'food_id' not in food_df.columns.str.lower():
@@ -240,9 +246,17 @@ def train_models(food_df, train_df):
 def load_gym_data():
     try:
         gym_df = pd.read_csv(GYM_DB_PATH)
+        
+        # Validate required columns for gym
+        required_gym_cols = ['BodyPart', 'Type', 'Level', 'Title', 'Rating']
+        if not all(col in gym_df.columns for col in required_gym_cols):
+            st.error("Gym dataset is missing required columns! Please check the CSV format.")
+            return None
+            
         gym_df['Rating'] = pd.to_numeric(gym_df['Rating'], errors='coerce').fillna(0)
         return gym_df
     except Exception as e:
+        st.error(f"Error loading Gym dataset: {e}")
         return None
 
 # Load global data and models
@@ -267,29 +281,33 @@ with st.sidebar:
     st.header("⚙️ Configure Settings")
     st.markdown("Adjust your profile to get personalized recommendations.")
     
-    # 1. Humanized Physical Consultation
-    st.subheader("Physical Profile")
-    weight = st.number_input("Weight (kg)", min_value=30.0, max_value=250.0, value=70.0)
-    height_cm = st.number_input("Height (cm)", min_value=100.0, max_value=250.0, value=175.0)
-    age = st.number_input("Age", min_value=12, max_value=100, value=25)
-    gender = st.selectbox("Gender", options=["Male", "Female"])
-    
-    # 2. Advanced App-Style Customization
-    st.subheader("Fitness Goals")
-    experience = st.selectbox("Experience Level", options=["Beginner", "Intermediate", "Expert"])
-    goal = st.selectbox("Primary Focus", options=["Weight loss", "Muscle gain", "General fitness"])
-    target_body_part = st.selectbox("Target Body Part", options=["Full Body", "Chest", "Abdominals", "Legs", "Arms"])
-    plan_days = st.selectbox("Plan Duration", options=[1, 7, 30], index=1, format_func=lambda x: f"{x} Day{'s' if x > 1 else ''}")
-    
-    activity_levels = {"Sedentary": 1.2, "Active": 1.55, "Highly Active": 1.725}
-    activity_str = st.selectbox("Daily Activity Level", options=list(activity_levels.keys()))
-    activity_mult = activity_levels[activity_str]
-    
-    diet_type = st.selectbox("Dietary Lifestyle", options=["Standard", "Vegetarian", "Vegan"])
-    
-    # 3. Strict Safety Guardrails
-    st.subheader("Safety Guardrails")
-    injury_status = st.selectbox("Active Injuries", options=["None", "Knee", "Back", "Shoulder"])
+    with st.form("user_profile_form"):
+        # 1. Humanized Physical Consultation
+        st.subheader("Physical Profile")
+        weight = st.number_input("Weight (kg)", min_value=30.0, max_value=250.0, value=70.0)
+        height_cm = st.number_input("Height (cm)", min_value=100.0, max_value=250.0, value=175.0)
+        age = st.number_input("Age", min_value=12, max_value=100, value=25)
+        gender = st.selectbox("Gender", options=["Male", "Female"])
+        
+        # 2. Advanced App-Style Customization
+        st.subheader("Fitness Goals")
+        experience = st.selectbox("Experience Level", options=["Beginner", "Intermediate", "Expert"])
+        goal = st.selectbox("Primary Focus", options=["Weight loss", "Muscle gain", "General fitness"])
+        target_body_part = st.selectbox("Target Body Part", options=["Full Body", "Chest", "Abdominals", "Legs", "Arms"])
+        plan_days = st.selectbox("Plan Duration", options=[1, 7, 30], index=1, format_func=lambda x: f"{x} Day{'s' if x > 1 else ''}")
+        
+        activity_levels = {"Sedentary": 1.2, "Active": 1.55, "Highly Active": 1.725}
+        activity_str = st.selectbox("Daily Activity Level", options=list(activity_levels.keys()))
+        activity_mult = activity_levels[activity_str]
+        
+        diet_type = st.selectbox("Dietary Lifestyle", options=["Standard", "Vegetarian", "Vegan"])
+        
+        # 3. Strict Safety Guardrails
+        st.subheader("Safety Guardrails")
+        injury_status = st.selectbox("Active Injuries", options=["None", "Knee", "Back", "Shoulder"])
+        
+        # Submit Button
+        submitted = st.form_submit_button("Save Profile & Recalculate")
 
 # --- TAB 1: Profile & Metrics ---
 with tab1:
@@ -480,18 +498,8 @@ with tab3:
                     if effective_body_part in ["Shoulder", "Chest"]: effective_body_part = "Legs"
 
                 def score_workout_with_algorithm(row, user_id=10):
-                    # Prioritize calling pre-trained Gym model objects if they exist in the global scope
-                    try:
-                        workout_id = row.name
-                        if workout_model_choice == 'A' and 'model_a_gym' in globals():
-                            return model_a_gym.predict(user_id, workout_id)
-                        elif workout_model_choice == 'B' and 'model_b_gym' in globals():
-                            return model_b_gym.predict(user_id, workout_id)
-                        elif workout_model_choice == 'C' and 'model_c_gym' in globals():
-                            return model_c_gym.predict(user_id, workout_id)
-                    except:
-                        pass
-
+                    # Uses the fallback algorithm implementation from original code
+                    # (Removed uninstantiated gym model check for cleaner code)
                     if workout_model_choice == 'A':
                         user_features = f"{effective_body_part} {' '.join(target_types)} {experience}"
                         item_features = f"{row.get('BodyPart', '')} {row.get('Type', '')} {row.get('Level', '')}"
