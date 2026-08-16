@@ -530,87 +530,316 @@ with tab2:
                 
                 if st.session_state.get('diet_plan_data') is None:
                     diet_plan_data = {}
-                    for d in range(1, plan_days + 1):
-                        c = -scores
-                        A_ub = np.array([-cals, cals, -pros, -is_staple, -is_protein])
-                        b_ub = np.array([-(target_calories - 150), target_calories + 150, -target_protein_g, -3, -3])
-                        bounds = [(0, 3) for _ in range(len(candidates_df))]
-                        res = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
-                        portions = np.zeros(len(candidates_df))
-                        
-                        if res.success: portions = res.x
-                        else:
-                            staple_mask = candidates_df['food_type'].isin(['Grains']).values
-                            prot_mask = candidates_df['food_type'].isin(protein_types).values
-                            s_c, p_c = 0, 0
-                            for i, m in enumerate(staple_mask):
-                                if m and s_c < 3: portions[i] = 1.0; s_c += 1
-                            for i, m in enumerate(prot_mask):
-                                if m and p_c < 3: portions[i] = 1.0; p_c += 1
-                            cur_pro = np.sum(pros * portions)
-                            if cur_pro < target_protein_g:
-                                pro_eff = pros / (cals + 1e-5)
-                                for idx in np.argsort(-pro_eff):
-                                    if cur_pro >= target_protein_g: break
-                                    portions[idx] += 0.5
-                                    cur_pro += pros[idx] * 0.5
-                        
-                        candidates_df['Portion'] = np.round(portions, 1)
-                        selected = candidates_df[candidates_df['Portion'] >= 0.1].copy()
-                        staples = selected[selected['food_type'].isin(['Grains'])].to_dict('records')
-                        meats = selected[selected['food_type'].isin(protein_types)].to_dict('records')
-                        others = selected[~selected['food_type'].isin(['Grains'] + protein_types)].to_dict('records')
-                        
-                        meals_dist = {'🍳 Breakfast': [], '🍱 Lunch': [], '🍽️ Dinner': []}
-                        meal_names = list(meals_dist.keys())
-                        for i, m_name in enumerate(meal_names):
-                            if i < len(staples): meals_dist[m_name].append(staples[i])
-                            if i < len(meats): meals_dist[m_name].append(meats[i])
-                        all_rem = staples[3:] + meats[3:] + others
-                        for i, item in enumerate(all_rem):
-                            meals_dist[meal_names[i % 3]].append(item)
-                        
-                        diet_plan_data[d] = meals_dist
-                    st.session_state['diet_plan_data'] = diet_plan_data
-                    
-                diet_plan_data = st.session_state['diet_plan_data']
-                for d in range(1, plan_days + 1):
-                    meals_dist = diet_plan_data[d]
-                    with st.expander(f"📅 Day {d:02d} Nutrition Menu", expanded=(d==1)):
-                        with st.form(key=f"diet_form_day_{d}"):
-                            ratings_to_save = {}
-                            for meal_name, items in meals_dist.items():
-                                st.markdown(f"**{meal_name}**")
-                                if not items:
-                                    st.write("*Empty Meal*")
-                                else:
-                                    meal_cals = sum(x['calories'] * x['Portion'] for x in items)
-                                    meal_pro = sum(x['protein_g'] * x['Portion'] for x in items)
-                                    item_list = []
-                                    for x in items:
-                                        item_list.append({
-                                            "Portion": f"{x['Portion']}x",
-                                            "Food ID": x['Food_ID'],
-                                            "Item": clean_name(x['food_name']),
-                                            "Calories": f"{x['calories']*x['Portion']:.0f} kcal",
-                                            "Protein": f"{x['protein_g']*x['Portion']:.1f} g",
-                                        })
-                                    st.table(pd.DataFrame(item_list).drop(columns=['Food ID']))
-                                    st.caption(f"🔥 Total: **{meal_cals:.0f} kcal** | 💪 Protein: **{meal_pro:.1f} g**")
-                                    
-                                    st.markdown("👉 **Rate these foods:**")
-                                    for x in items:
-                                        rate_val = st.slider(f"Rate {clean_name(x['food_name'])}", 1.0, 5.0, 3.0, 0.5, key=f"rate_food_{d}_{meal_name}_{x['Food_ID']}")
-                                        ratings_to_save[x['Food_ID']] = rate_val
-                                        
-                            if st.form_submit_button("✅ Batch Submit All Diet Ratings for this Day"):
-                                for f_id, r_val in ratings_to_save.items():
-                                    add_rating(current_user, f_id, r_val)
-                                st.cache_data.clear()
-                                st.cache_resource.clear()
-                                st.session_state['toast_msg'] = f"✅ Day {d} diet ratings saved successfully! AI models retrained."
-                                st.rerun()
 
+                    # 保存最近 2 天吃过的 Food ID
+                    recent_days_foods = []
+
+                    for d in range(1, plan_days + 1):
+
+                        # =====================================================
+                        # 1. CREATE DAILY CANDIDATE POOL
+                        # =====================================================
+                        daily_candidates = candidates_df.copy()
+
+                        # 找出最近 2 天已经吃过的食物
+                        recently_used_ids = set()
+
+                        for day_foods in recent_days_foods[-2:]:
+                            recently_used_ids.update(day_foods)
+
+                        # 尝试避免最近 2 天的食物
+                        if recently_used_ids:
+                            filtered_candidates = daily_candidates[
+                                ~daily_candidates['Food_ID'].isin(recently_used_ids)
+                            ].copy()
+
+                            # 确保剩下的 food 数量够多
+                            # 而且仍然有 grains + protein
+                            grains_available = filtered_candidates[
+                                filtered_candidates['food_type'].isin(['Grains'])
+                            ]
+
+                            proteins_available = filtered_candidates[
+                                filtered_candidates['food_type'].isin(protein_types)
+                            ]
+
+                            if (
+                                len(filtered_candidates) >= 15
+                                and len(grains_available) >= 3
+                                and len(proteins_available) >= 3
+                            ):
+                                daily_candidates = filtered_candidates
+
+                        # =====================================================
+                        # 2. PREPARE DAILY VALUES
+                        # =====================================================
+                        daily_cals = daily_candidates['calories'].values
+                        daily_pros = daily_candidates['protein_g'].values
+                        daily_scores = daily_candidates['current_score'].values
+
+                        daily_is_staple = (
+                            daily_candidates['food_type']
+                            .isin(['Grains'])
+                            .astype(int)
+                            .values
+                        )
+
+                        daily_is_protein = (
+                            daily_candidates['food_type']
+                            .isin(protein_types)
+                            .astype(int)
+                            .values
+                        )
+
+                        # =====================================================
+                        # 3. ADD RANDOMNESS FOR DAILY VARIETY
+                        # =====================================================
+                        # 比之前 +/-15% 更大一点，让每天变化明显一些
+                        daily_noise = np.random.uniform(
+                            0.70,
+                            1.30,
+                            size=len(daily_scores)
+                        )
+
+                        # Random bonus
+                        random_bonus = np.random.uniform(
+                            0.90,
+                            1.10,
+                            size=len(daily_scores)
+                        )
+
+                        final_daily_scores = (
+                            daily_scores
+                            * daily_noise
+                            * random_bonus
+                        )
+
+                        # linprog 是 minimize，所以加 negative
+                        c = -final_daily_scores
+
+                        # =====================================================
+                        # 4. NUTRITION CONSTRAINTS
+                        # =====================================================
+                        A_ub = np.array([
+                            -daily_cals,
+                            daily_cals,
+                            -daily_pros,
+                            -daily_is_staple,
+                            -daily_is_protein
+                        ])
+
+                        b_ub = np.array([
+                            -(target_calories - 150),
+                            target_calories + 150,
+                            -target_protein_g,
+                            -3,
+                            -3
+                        ])
+
+                        # 每种 food 最大 3 portions
+                        bounds = [
+                            (0, 3)
+                            for _ in range(len(daily_candidates))
+                        ]
+
+                        # =====================================================
+                        # 5. OPTIMIZATION
+                        # =====================================================
+                        res = linprog(
+                            c,
+                            A_ub=A_ub,
+                            b_ub=b_ub,
+                            bounds=bounds,
+                            method='highs'
+                        )
+
+                        portions = np.zeros(
+                            len(daily_candidates)
+                        )
+
+                        # =====================================================
+                        # 6. IF OPTIMIZATION SUCCESS
+                        # =====================================================
+                        if res.success:
+                            portions = res.x
+
+                        # =====================================================
+                        # 7. FALLBACK IF OPTIMIZATION FAILS
+                        # =====================================================
+                        else:
+                            staple_mask = (
+                                daily_candidates['food_type']
+                                .isin(['Grains'])
+                                .values
+                            )
+
+                            prot_mask = (
+                                daily_candidates['food_type']
+                                .isin(protein_types)
+                                .values
+                            )
+
+                            # Randomize order so fallback also changes every day
+                            staple_indices = np.where(staple_mask)[0]
+                            protein_indices = np.where(prot_mask)[0]
+
+                            np.random.shuffle(staple_indices)
+                            np.random.shuffle(protein_indices)
+
+                            # Choose 3 staples
+                            for idx in staple_indices[:3]:
+                                portions[idx] = 1.0
+
+                            # Choose 3 protein foods
+                            for idx in protein_indices[:3]:
+                                portions[idx] = 1.0
+
+                            # Check protein target
+                            cur_pro = np.sum(
+                                daily_pros * portions
+                            )
+
+                            if cur_pro < target_protein_g:
+
+                                pro_eff = (
+                                    daily_pros /
+                                    (daily_cals + 1e-5)
+                                )
+
+                                # Add tiny random noise so same high protein
+                                # food is not always selected
+                                pro_eff = (
+                                    pro_eff *
+                                    np.random.uniform(
+                                        0.8,
+                                        1.2,
+                                        size=len(pro_eff)
+                                    )
+                                )
+
+                                for idx in np.argsort(-pro_eff):
+
+                                    if cur_pro >= target_protein_g:
+                                        break
+
+                                    # 不超过 max portion 3
+                                    if portions[idx] < 3:
+                                        add_portion = min(
+                                            0.5,
+                                            3 - portions[idx]
+                                        )
+
+                                        portions[idx] += add_portion
+
+                                        cur_pro += (
+                                            daily_pros[idx]
+                                            * add_portion
+                                        )
+
+                        # =====================================================
+                        # 8. SELECT FOODS
+                        # =====================================================
+                        daily_candidates = daily_candidates.copy()
+
+                        daily_candidates['Portion'] = np.round(
+                            portions,
+                            1
+                        )
+
+                        selected = daily_candidates[
+                            daily_candidates['Portion'] >= 0.1
+                        ].copy()
+
+                        # =====================================================
+                        # 9. REMEMBER TODAY'S FOODS
+                        # =====================================================
+                        today_food_ids = set(
+                            selected['Food_ID'].tolist()
+                        )
+
+                        recent_days_foods.append(
+                            today_food_ids
+                        )
+
+                        # 只保存最近 2 天
+                        if len(recent_days_foods) > 2:
+                            recent_days_foods.pop(0)
+
+                        # =====================================================
+                        # 10. SPLIT FOOD INTO CATEGORIES
+                        # =====================================================
+                        staples = selected[
+                            selected['food_type'].isin(
+                                ['Grains']
+                            )
+                        ].to_dict('records')
+
+                        meats = selected[
+                            selected['food_type'].isin(
+                                protein_types
+                            )
+                        ].to_dict('records')
+
+                        others = selected[
+                            ~selected['food_type'].isin(
+                                ['Grains'] + protein_types
+                            )
+                        ].to_dict('records')
+
+                        # Shuffle before assigning meals
+                        # 避免每次 Breakfast 永远拿第一个 food
+                        random.shuffle(staples)
+                        random.shuffle(meats)
+                        random.shuffle(others)
+
+                        # =====================================================
+                        # 11. DISTRIBUTE INTO BREAKFAST / LUNCH / DINNER
+                        # =====================================================
+                        meals_dist = {
+                            '🍳 Breakfast': [],
+                            '🍱 Lunch': [],
+                            '🍽️ Dinner': []
+                        }
+
+                        meal_names = list(
+                            meals_dist.keys()
+                        )
+
+                        # Give each meal one staple if available
+                        for i, m_name in enumerate(meal_names):
+                            if i < len(staples):
+                                meals_dist[m_name].append(
+                                    staples[i]
+                                )
+
+                        # Give each meal one protein if available
+                        for i, m_name in enumerate(meal_names):
+                            if i < len(meats):
+                                meals_dist[m_name].append(
+                                    meats[i]
+                                )
+
+                        # Remaining foods
+                        all_rem = (
+                            staples[3:]
+                            + meats[3:]
+                            + others
+                        )
+
+                        # Randomize remaining foods
+                        random.shuffle(all_rem)
+
+                        for i, item in enumerate(all_rem):
+                            meals_dist[
+                                meal_names[i % 3]
+                            ].append(item)
+
+                        # =====================================================
+                        # 12. SAVE DAY PLAN
+                        # =====================================================
+                        diet_plan_data[d] = meals_dist
+
+                    st.session_state['diet_plan_data'] = diet_plan_data
 # --- TAB 3: Workout Plan ---
 with tab3:
     st.header("🏋️ AI Workout & Injury Prevention Engine")
