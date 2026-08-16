@@ -358,6 +358,11 @@ gym_df = load_gym_data()
 current_user = st.session_state['username']
 prof = st.session_state['profile']
 
+user_has_history = False
+if train_df is not None and not train_df.empty:
+    if str(current_user) in train_df['User_ID'].astype(str).values:
+        user_has_history = True
+
 colA, colB = st.columns([8, 1])
 with colA:
     st.title("🤖 AI Fitness & Nutrition Companion")
@@ -457,10 +462,16 @@ with tab1:
 with tab2:
     st.header("🥗 AI Smart Plate Builder")
     st.markdown("Our AI engines dynamically synthesize a diet tailored to your goals and macros.")
-    model_choice = st.radio("Select AI Engine for Nutrition", options=["A", "B", "C"], 
-                            format_func=lambda x: f"Model {x}: " + 
-                            ("Content-Based Filter" if x == 'A' else "Collaborative Filter" if x == 'B' else "SVD Matrix Factorization"),
-                            horizontal=True)
+    
+    if user_has_history:
+        options = ["A", "B", "C"]
+        format_func = lambda x: f"Model {x}: " + ("Content-Based Filter" if x == 'A' else "Collaborative Filter" if x == 'B' else "SVD Matrix Factorization")
+    else:
+        options = ["A"]
+        format_func = lambda x: "Model A: Content-Based Filter (New User)"
+        st.info("🌱 **Cold Start Mode**: As a new user, only Content-Based Filtering is available. Rate meals to unlock Advanced AI Models (Collaborative & SVD)!")
+        
+    model_choice = st.radio("Select AI Engine for Nutrition", options=options, format_func=format_func, horizontal=True)
     
     if st.button("🍳 Generate Nutrition Plan"):
         if food_df is None:
@@ -566,9 +577,17 @@ with tab2:
 with tab3:
     st.header("🏋️ AI Workout & Injury Prevention Engine")
     st.markdown("Generates a movement architecture tailored to your level and safe-zones.")
-    workout_model_choice = st.radio("Select AI Engine for Workout", options=["A", "B", "C"], 
-                            format_func=lambda x: f"Model {x}: " + 
-                            ("Content-Based Filter" if x == 'A' else "Collaborative Filter" if x == 'B' else "SVD Matrix Factorization"),
+    
+    if user_has_history:
+        gym_options = ["A", "B", "C"]
+        gym_format_func = lambda x: f"Model {x}: " + ("Content-Based Filter" if x == 'A' else "Collaborative Filter" if x == 'B' else "SVD Matrix Factorization")
+    else:
+        gym_options = ["A"]
+        gym_format_func = lambda x: "Model A: Content-Based Filter (New User)"
+        st.info("🌱 **Cold Start Mode**: As a new user, only Content-Based Filtering is available. Rate meals in the Diet tab to establish your profile and unlock Advanced Models here!")
+        
+    workout_model_choice = st.radio("Select AI Engine for Workout", options=gym_options, 
+                            format_func=gym_format_func,
                             horizontal=True, key="workout_model_radio")
     
     if st.button("💪 Generate Workout Plan"):
