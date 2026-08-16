@@ -383,6 +383,9 @@ with colB:
         st.session_state.clear()
         st.rerun()
 
+if 'toast_msg' in st.session_state:
+    st.toast(st.session_state.pop('toast_msg'))
+
 tab1, tab2, tab3 = st.tabs(["👤 Profile & Goals", "🥗 Nutrition Plan", "🏋️ Workout Plan"])
 
 with st.sidebar:
@@ -596,7 +599,7 @@ with tab2:
                                     add_rating(current_user, f_id, r_val)
                                 st.cache_data.clear()
                                 st.cache_resource.clear()
-                                st.success("All diet ratings saved to Dataset! Models will learn from this.")
+                                st.session_state['toast_msg'] = f"✅ Day {d} diet ratings saved successfully! AI models retrained."
                                 st.rerun()
 
 # --- TAB 3: Workout Plan ---
@@ -705,5 +708,5 @@ with tab3:
                                             add_rating(current_user, f"GYM_{g_id}", r_val)
                                         st.cache_data.clear()
                                         st.cache_resource.clear()
-                                        st.success("All gym ratings saved! Models will learn from this.")
+                                        st.session_state['toast_msg'] = f"✅ Day {day} gym ratings saved successfully! AI models retrained."
                                         st.rerun()
