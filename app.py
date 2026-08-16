@@ -486,9 +486,10 @@ with tab2:
         st.info("🌱 **Cold Start Mode**: As a new user, only Content-Based Filtering is available. Rate meals to unlock Advanced AI Models (Collaborative & SVD)!")
         
     model_choice = st.radio("Select AI Engine for Nutrition", options=options, format_func=format_func, horizontal=True)
-    
+    st.markdown("---")
     if st.button("🍳 Generate Nutrition Plan"):
         st.session_state['show_diet_plan'] = True
+        st.session_state['diet_plan_data'] = None
         
     if st.session_state.get('show_diet_plan', False):
         if food_df is None:
@@ -527,8 +528,9 @@ with tab2:
                 
                 def clean_name(name): return str(name).split(',')[0][:30].title() 
                 
-                for d in range(1, plan_days + 1):
-                    with st.expander(f"📅 Day {d:02d} Nutrition Menu", expanded=(d==1)):
+                if st.session_state.get('diet_plan_data') is None:
+                    diet_plan_data = {}
+                    for d in range(1, plan_days + 1):
                         c = -scores
                         A_ub = np.array([-cals, cals, -pros, -is_staple, -is_protein])
                         b_ub = np.array([-(target_calories - 150), target_calories + 150, -target_protein_g, -3, -3])
@@ -567,7 +569,14 @@ with tab2:
                         all_rem = staples[3:] + meats[3:] + others
                         for i, item in enumerate(all_rem):
                             meals_dist[meal_names[i % 3]].append(item)
-                            
+                        
+                        diet_plan_data[d] = meals_dist
+                    st.session_state['diet_plan_data'] = diet_plan_data
+                    
+                diet_plan_data = st.session_state['diet_plan_data']
+                for d in range(1, plan_days + 1):
+                    meals_dist = diet_plan_data[d]
+                    with st.expander(f"📅 Day {d:02d} Nutrition Menu", expanded=(d==1)):
                         with st.form(key=f"diet_form_day_{d}"):
                             ratings_to_save = {}
                             for meal_name, items in meals_dist.items():
@@ -621,6 +630,7 @@ with tab3:
     
     if st.button("💪 Generate Workout Plan"):
         st.session_state['show_gym_plan'] = True
+        st.session_state['gym_plan_data'] = None
         
     if st.session_state.get('show_gym_plan', False):
         if gym_df is None:
@@ -674,18 +684,29 @@ with tab3:
                 highly_matched_exercises = g_df.sort_values(by=['AI_Match_Score', 'Rating'], ascending=[False, False])
                 
                 if not highly_matched_exercises.empty:
-                    top_workout_pool = highly_matched_exercises.to_dict('records')
+                    if st.session_state.get('gym_plan_data') is None:
+                        top_workout_pool = highly_matched_exercises.to_dict('records')
+                        gym_plan_data = {}
+                        for day in range(1, plan_days + 1):
+                            day_of_week = day % 7
+                            if day_of_week == 3 or day_of_week == 0:
+                                gym_plan_data[day] = None
+                            else:
+                                sample_pool_size = min(15, len(top_workout_pool))
+                                daily_moves = random.sample(top_workout_pool[:sample_pool_size], min(4, sample_pool_size))
+                                gym_plan_data[day] = daily_moves
+                        st.session_state['gym_plan_data'] = gym_plan_data
+                        
+                    gym_plan_data = st.session_state['gym_plan_data']
                     st.success(f"✨ Algorithm [{workout_model_choice}] successfully curated your {plan_days}-Day Movement Architecture")
                     for day in range(1, plan_days + 1):
                         day_of_week = day % 7
                         with st.expander(f"📅 DAY {day:02d} - {'Rest & Recovery 🛌' if day_of_week in [0, 3] else 'Workout Day 🏋️'}", expanded=(day==1)):
-                            if day_of_week == 3 or day_of_week == 0:
+                            daily_moves = gym_plan_data[day]
+                            if daily_moves is None:
                                 st.write("🛌 **Rest & Recovery** -> Unwind, hydrate, and stretch!")
                             else:
-                                sample_pool_size = min(15, len(top_workout_pool))
-                                daily_moves = random.sample(top_workout_pool[:sample_pool_size], min(4, sample_pool_size))
                                 move_list = []
-                                
                                 with st.form(key=f"gym_form_day_{day}"):
                                     for i, move in enumerate(daily_moves, 1):
                                         match_pct = move['AI_Match_Score'] * 100
