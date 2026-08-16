@@ -106,6 +106,8 @@ def get_user_profile(username):
 
 def update_user_profile(username, profile_data):
     df = pd.read_csv(USER_DB_PATH)
+    # 强制转换为 object 类型，防止 Pandas 因新旧数据类型不完全匹配（如 float64 vs int64）而报错
+    df = df.astype(object)
     idx = df.index[df['username'] == username].tolist()
     if idx:
         for k, v in profile_data.items():
