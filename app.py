@@ -236,31 +236,37 @@ class ContentBasedRecommender:
         self.item_df = item_df.copy() if item_df is not None else None
         self.tfidf_matrix = None
         self.cosine_sim = None
+        self.food_id_to_idx = {}
         
     def fit(self):
         if self.item_df is None: return
+        self.item_df = self.item_df.reset_index(drop=True)
         tfidf = TfidfVectorizer(stop_words='english')
         self.tfidf_matrix = tfidf.fit_transform(self.item_df['features'])
         self.cosine_sim = cosine_similarity(self.tfidf_matrix, self.tfidf_matrix)
+        self.food_id_to_idx = {str(val): idx for idx, val in self.item_df['Food_ID'].items()}
         
-    def predict(self, user_id, item_id, train_data):
-        user_history = train_data[train_data['User_ID'] == user_id]
-        if user_history.empty: return 3.0
-        try: target_idx = self.item_df[self.item_df['Food_ID'] == item_id].index[0]
-        except IndexError: return 3.0
+    def predict(self, user_id, item_id, train_data, user_hist_dict=None):
+        if user_hist_dict is None:
+            user_history = train_data[train_data['User_ID'].astype(str) == str(user_id)]
+            if user_history.empty: return 3.0
+            user_hist_dict = user_history.set_index('Food_ID')['Rating'].to_dict()
+            
+        if not user_hist_dict: return 3.0
+        target_idx = self.food_id_to_idx.get(str(item_id))
+        if target_idx is None: return 3.0
             
         sim_scores = []
-        for _, row in user_history.iterrows():
-            hist_item_id = row['Food_ID']
-            try:
-                hist_idx = self.item_df[self.item_df['Food_ID'] == hist_item_id].index[0]
+        for hist_item_id, rating in user_hist_dict.items():
+            hist_idx = self.food_id_to_idx.get(str(hist_item_id))
+            if hist_idx is not None:
                 sim = self.cosine_sim[target_idx][hist_idx]
-                sim_scores.append((sim, row['Rating']))
-            except IndexError: continue
-        if not sim_scores: return train_data['Rating'].mean()
+                sim_scores.append((sim, rating))
+                
+        if not sim_scores: return 3.0
         weighted_sum = sum(sim * rating for sim, rating in sim_scores)
         sum_sim = sum(sim for sim, rating in sim_scores)
-        return weighted_sum / sum_sim if sum_sim > 0 else train_data['Rating'].mean()
+        return weighted_sum / sum_sim if sum_sim > 0 else 3.0
 
 class CollaborativeFilteringRecommender:
     def __init__(self):
@@ -275,12 +281,15 @@ class CollaborativeFilteringRecommender:
         user_similarity = cosine_similarity(self.user_item_matrix)
         self.user_similarity_df = pd.DataFrame(user_similarity, index=self.user_item_matrix.index, columns=self.user_item_matrix.index)
         
-    def predict(self, user_id, item_id):
+    def predict(self, user_id, item_id, top_similar_users=None):
         if self.user_item_matrix is None or user_id not in self.user_item_matrix.index or item_id not in self.user_item_matrix.columns:
             return self.global_mean
-        similar_users = self.user_similarity_df[user_id].sort_values(ascending=False).drop(user_id)
+            
+        if top_similar_users is None:
+            top_similar_users = self.user_similarity_df[user_id].sort_values(ascending=False).drop(user_id).head(5)
+            
         weighted_sum = 0; sum_sim = 0
-        for neighbor_id, sim in similar_users.head(5).items():
+        for neighbor_id, sim in top_similar_users.items():
             rating = self.user_item_matrix.loc[neighbor_id, item_id]
             if rating > 0:
                 weighted_sum += sim * rating
@@ -483,9 +492,16 @@ with tab2:
             st.error("Food dataset not loaded.")
         else:
             with st.spinner(f"Booting up Engine {model_choice}... Pre-scoring ingredients..."):
+                user_hist_df = train_df[train_df['User_ID'].astype(str) == str(current_user)]
+                user_hist_dict = user_hist_df.set_index('Food_ID')['Rating'].to_dict()
+                
+                top_similar_users = None
+                if model_choice == 'B' and model_b.user_item_matrix is not None and current_user in model_b.user_item_matrix.index:
+                    top_similar_users = model_b.user_similarity_df[current_user].sort_values(ascending=False).drop(current_user).head(5)
+                
                 def score_food_with_model(food_id, user_id=current_user):
-                    if model_choice == 'A': return model_a.predict(user_id, food_id, train_df)
-                    elif model_choice == 'B': return model_b.predict(user_id, food_id)
+                    if model_choice == 'A': return model_a.predict(user_id, food_id, train_df, user_hist_dict)
+                    elif model_choice == 'B': return model_b.predict(user_id, food_id, top_similar_users)
                     elif model_choice == 'C': return model_c.predict(user_id, food_id)
                     return 3.0
                 
