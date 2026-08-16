@@ -565,34 +565,39 @@ with tab2:
                         for i, item in enumerate(all_rem):
                             meals_dist[meal_names[i % 3]].append(item)
                             
-                        for meal_name, items in meals_dist.items():
-                            st.markdown(f"**{meal_name}**")
-                            if not items:
-                                st.write("*Empty Meal*")
-                            else:
-                                meal_cals = sum(x['calories'] * x['Portion'] for x in items)
-                                meal_pro = sum(x['protein_g'] * x['Portion'] for x in items)
-                                item_list = []
-                                for x in items:
-                                    item_list.append({
-                                        "Portion": f"{x['Portion']}x",
-                                        "Food ID": x['Food_ID'],
-                                        "Item": clean_name(x['food_name']),
-                                        "Calories": f"{x['calories']*x['Portion']:.0f} kcal",
-                                        "Protein": f"{x['protein_g']*x['Portion']:.1f} g",
-                                    })
-                                st.table(pd.DataFrame(item_list).drop(columns=['Food ID']))
-                                st.caption(f"🔥 Total: **{meal_cals:.0f} kcal** | 💪 Protein: **{meal_pro:.1f} g**")
-                                
-                                # Rate these foods!
-                                st.markdown("👉 **Rate these foods for better future recommendations:**")
-                                for x in items:
-                                    rate_val = st.slider(f"Rate {clean_name(x['food_name'])}", 1.0, 5.0, 3.0, 0.5, key=f"rate_food_{d}_{meal_name}_{x['Food_ID']}")
-                                    if st.button("Submit Rating", key=f"btn_food_{d}_{meal_name}_{x['Food_ID']}"):
-                                        add_rating(current_user, x['Food_ID'], rate_val)
-                                        st.cache_data.clear()
-                                        st.cache_resource.clear()
-                                        st.success("Rating saved to Dataset! Models will learn from this.")
+                        with st.form(key=f"diet_form_day_{d}"):
+                            ratings_to_save = {}
+                            for meal_name, items in meals_dist.items():
+                                st.markdown(f"**{meal_name}**")
+                                if not items:
+                                    st.write("*Empty Meal*")
+                                else:
+                                    meal_cals = sum(x['calories'] * x['Portion'] for x in items)
+                                    meal_pro = sum(x['protein_g'] * x['Portion'] for x in items)
+                                    item_list = []
+                                    for x in items:
+                                        item_list.append({
+                                            "Portion": f"{x['Portion']}x",
+                                            "Food ID": x['Food_ID'],
+                                            "Item": clean_name(x['food_name']),
+                                            "Calories": f"{x['calories']*x['Portion']:.0f} kcal",
+                                            "Protein": f"{x['protein_g']*x['Portion']:.1f} g",
+                                        })
+                                    st.table(pd.DataFrame(item_list).drop(columns=['Food ID']))
+                                    st.caption(f"🔥 Total: **{meal_cals:.0f} kcal** | 💪 Protein: **{meal_pro:.1f} g**")
+                                    
+                                    st.markdown("👉 **Rate these foods:**")
+                                    for x in items:
+                                        rate_val = st.slider(f"Rate {clean_name(x['food_name'])}", 1.0, 5.0, 3.0, 0.5, key=f"rate_food_{d}_{meal_name}_{x['Food_ID']}")
+                                        ratings_to_save[x['Food_ID']] = rate_val
+                                        
+                            if st.form_submit_button("✅ Batch Submit All Diet Ratings for this Day"):
+                                for f_id, r_val in ratings_to_save.items():
+                                    add_rating(current_user, f_id, r_val)
+                                st.cache_data.clear()
+                                st.cache_resource.clear()
+                                st.success("All diet ratings saved to Dataset! Models will learn from this.")
+                                st.rerun()
 
 # --- TAB 3: Workout Plan ---
 with tab3:
@@ -677,12 +682,28 @@ with tab3:
                                 sample_pool_size = min(15, len(top_workout_pool))
                                 daily_moves = random.sample(top_workout_pool[:sample_pool_size], min(4, sample_pool_size))
                                 move_list = []
-                                for i, move in enumerate(daily_moves, 1):
-                                    match_pct = move['AI_Match_Score'] * 100
-                                    move_list.append({
-                                        "Move #": f"Move {i}",
-                                        "Exercise": move['Title'][:45],
-                                        "Target": move['BodyPart'],
-                                        "AI Match": f"⭐ {match_pct:.1f}%"
-                                    })
-                                st.table(pd.DataFrame(move_list))
+                                
+                                with st.form(key=f"gym_form_day_{day}"):
+                                    for i, move in enumerate(daily_moves, 1):
+                                        match_pct = move['AI_Match_Score'] * 100
+                                        move_list.append({
+                                            "Move #": f"Move {i}",
+                                            "Exercise": move['Title'][:45],
+                                            "Target": move['BodyPart'],
+                                            "AI Match": f"⭐ {match_pct:.1f}%"
+                                        })
+                                    st.table(pd.DataFrame(move_list))
+                                    
+                                    gym_ratings_to_save = {}
+                                    st.markdown("👉 **Rate these exercises:**")
+                                    for i, move in enumerate(daily_moves, 1):
+                                        r_val = st.slider(f"Rate {move['Title'][:30]}", 1.0, 5.0, 3.0, 0.5, key=f"rate_gym_{day}_{i}")
+                                        gym_ratings_to_save[move['Title']] = r_val
+                                        
+                                    if st.form_submit_button("✅ Batch Submit All Gym Ratings for this Day"):
+                                        for g_id, r_val in gym_ratings_to_save.items():
+                                            add_rating(current_user, f"GYM_{g_id}", r_val)
+                                        st.cache_data.clear()
+                                        st.cache_resource.clear()
+                                        st.success("All gym ratings saved! Models will learn from this.")
+                                        st.rerun()
