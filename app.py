@@ -476,6 +476,9 @@ with tab2:
     model_choice = st.radio("Select AI Engine for Nutrition", options=options, format_func=format_func, horizontal=True)
     
     if st.button("🍳 Generate Nutrition Plan"):
+        st.session_state['show_diet_plan'] = True
+        
+    if st.session_state.get('show_diet_plan', False):
         if food_df is None:
             st.error("Food dataset not loaded.")
         else:
@@ -593,6 +596,9 @@ with tab3:
                             horizontal=True, key="workout_model_radio")
     
     if st.button("💪 Generate Workout Plan"):
+        st.session_state['show_gym_plan'] = True
+        
+    if st.session_state.get('show_gym_plan', False):
         if gym_df is None:
             st.error("Gym dataset not found.")
         else:
