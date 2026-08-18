@@ -9,7 +9,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse.linalg import svds
-from scipy.optimize import linprog
 
 warnings.filterwarnings('ignore')
 
@@ -408,43 +407,45 @@ with tab2:
                     for d in range(1, plan_days + 1):
                         # Add +/- 15% random variance to scores to ensure daily variety
                         daily_noise = np.random.uniform(0.85, 1.15, size=len(scores))
-                        c = -(scores * daily_noise)
+                        candidates_df['adj_score'] = scores * daily_noise
+                        day_candidates = candidates_df.sort_values('adj_score', ascending=False)
                         
-                        A_ub = np.array([-cals, cals, -pros, -is_staple, -is_protein])
-                        b_ub = np.array([-(target_calories - 150), target_calories + 150, -target_protein_g, -3, -3])
-                        bounds = [(0, 3) for _ in range(len(candidates_df))]
-                        res = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
-                        portions = np.zeros(len(candidates_df))
+                        s_pool = day_candidates[day_candidates['food_type'].isin(['Grains'])].head(15).to_dict('records')
+                        p_pool = day_candidates[day_candidates['food_type'].isin(protein_types)].head(15).to_dict('records')
+                        o_pool = day_candidates[~day_candidates['food_type'].isin(['Grains'] + protein_types)].head(20).to_dict('records')
                         
-                        if res.success: portions = res.x
-                        else:
-                            staple_indices = np.where(staple_mask)[0]
-                            prot_indices = np.where(prot_mask)[0]
+                        random.shuffle(s_pool)
+                        random.shuffle(p_pool)
+                        random.shuffle(o_pool)
+                        
+                        selected_items = []
+                        # Base selection: 3-4 staples, 3-4 proteins, 4-5 others
+                        for item in s_pool[:random.randint(3, 4)]:
+                            item['Portion'] = 1.0; selected_items.append(item)
+                        for item in p_pool[:random.randint(3, 4)]:
+                            item['Portion'] = 1.0; selected_items.append(item)
+                        for item in o_pool[:random.randint(4, 5)]:
+                            item['Portion'] = 0.5; selected_items.append(item)
                             
-                            # Take top 10, shuffle, pick 3 to guarantee variety in fallback
-                            s_pool = staple_indices[:10]
-                            p_pool = prot_indices[:10]
-                            np.random.shuffle(s_pool)
-                            np.random.shuffle(p_pool)
-                            
-                            for idx in s_pool[:3]: portions[idx] = 1.0
-                            for idx in p_pool[:3]: portions[idx] = 1.0
-                            
-                            cur_pro = np.sum(pros * portions)
+                        # Top-up macros greedily
+                        for _ in range(50):
+                            cur_cal = sum(x['calories'] * x['Portion'] for x in selected_items)
+                            cur_pro = sum(x['protein_g'] * x['Portion'] for x in selected_items)
                             if cur_pro < target_protein_g:
-                                pro_eff = pros / (cals + 1e-5)
-                                eff_indices = np.argsort(-pro_eff)[:15] # top 15 efficient
-                                np.random.shuffle(eff_indices)
-                                for idx in eff_indices:
-                                    if cur_pro >= target_protein_g: break
-                                    portions[idx] += 0.5
-                                    cur_pro += pros[idx] * 0.5
-                        
-                        candidates_df['Portion'] = np.round(portions, 1)
-                        selected = candidates_df[candidates_df['Portion'] >= 0.1].copy()
-                        staples = selected[selected['food_type'].isin(['Grains'])].to_dict('records')
-                        meats = selected[selected['food_type'].isin(protein_types)].to_dict('records')
-                        others = selected[~selected['food_type'].isin(['Grains'] + protein_types)].to_dict('records')
+                                p_items = [x for x in selected_items if x['food_type'] in protein_types]
+                                if p_items: random.choice(p_items)['Portion'] += 0.5
+                                else: random.choice(selected_items)['Portion'] += 0.5
+                            elif cur_cal < target_calories - 150:
+                                random.choice(selected_items)['Portion'] += 0.5
+                            elif cur_cal > target_calories + 150:
+                                item = random.choice(selected_items)
+                                if item['Portion'] >= 1.0: item['Portion'] -= 0.5
+                            else: break
+                            
+                        selected_items = [x for x in selected_items if x['Portion'] > 0]
+                        staples = [x for x in selected_items if x['food_type'] in ['Grains']]
+                        meats = [x for x in selected_items if x['food_type'] in protein_types]
+                        others = [x for x in selected_items if x['food_type'] not in ['Grains'] + protein_types]
                         
                         random.shuffle(staples)
                         random.shuffle(meats)
