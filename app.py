@@ -418,17 +418,24 @@ with tab2:
                         
                         if res.success: portions = res.x
                         else:
-                            staple_mask = candidates_df['food_type'].isin(['Grains']).values
-                            prot_mask = candidates_df['food_type'].isin(protein_types).values
-                            s_c, p_c = 0, 0
-                            for i, m in enumerate(staple_mask):
-                                if m and s_c < 3: portions[i] = 1.0; s_c += 1
-                            for i, m in enumerate(prot_mask):
-                                if m and p_c < 3: portions[i] = 1.0; p_c += 1
+                            staple_indices = np.where(staple_mask)[0]
+                            prot_indices = np.where(prot_mask)[0]
+                            
+                            # Take top 10, shuffle, pick 3 to guarantee variety in fallback
+                            s_pool = staple_indices[:10]
+                            p_pool = prot_indices[:10]
+                            np.random.shuffle(s_pool)
+                            np.random.shuffle(p_pool)
+                            
+                            for idx in s_pool[:3]: portions[idx] = 1.0
+                            for idx in p_pool[:3]: portions[idx] = 1.0
+                            
                             cur_pro = np.sum(pros * portions)
                             if cur_pro < target_protein_g:
                                 pro_eff = pros / (cals + 1e-5)
-                                for idx in np.argsort(-pro_eff):
+                                eff_indices = np.argsort(-pro_eff)[:15] # top 15 efficient
+                                np.random.shuffle(eff_indices)
+                                for idx in eff_indices:
                                     if cur_pro >= target_protein_g: break
                                     portions[idx] += 0.5
                                     cur_pro += pros[idx] * 0.5
@@ -438,6 +445,10 @@ with tab2:
                         staples = selected[selected['food_type'].isin(['Grains'])].to_dict('records')
                         meats = selected[selected['food_type'].isin(protein_types)].to_dict('records')
                         others = selected[~selected['food_type'].isin(['Grains'] + protein_types)].to_dict('records')
+                        
+                        random.shuffle(staples)
+                        random.shuffle(meats)
+                        random.shuffle(others)
                         
                         meals_dist = {'🍳 Breakfast': [], '🍱 Lunch': [], '🍽️ Dinner': []}
                         meal_names = list(meals_dist.keys())
