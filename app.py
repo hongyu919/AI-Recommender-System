@@ -52,134 +52,21 @@ st.markdown("""
 
 
 # ==========================================
-# DATASET MANAGEMENT (Replacing SQLite)
+# DATASET MANAGEMENT
 # ==========================================
-USER_DB_PATH = "user_profiles_dataset.csv"
-RATINGS_DB_PATH = "user_ratings_dataset.csv"
 FOOD_DB_PATH = "healthy_foods_database.csv"
 GYM_DB_PATH = "megaGymDataset.csv"
 
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def init_datasets():
-    if not os.path.exists(USER_DB_PATH):
-        df = pd.DataFrame(columns=[
-            'username', 'password_hash', 'weight', 'height_cm', 'age', 'gender',
-            'experience', 'goal', 'target_body_part', 'plan_days', 'activity_str',
-            'diet_type', 'injury_status'
-        ])
-        df.to_csv(USER_DB_PATH, index=False)
-        
-    if not os.path.exists(RATINGS_DB_PATH):
-        df = pd.DataFrame(columns=['User_ID', 'Food_ID', 'Rating'])
-        df.to_csv(RATINGS_DB_PATH, index=False)
-
-def register_user(username, password):
-    df = pd.read_csv(USER_DB_PATH)
-    if username in df['username'].values:
-        return False
-    new_user = pd.DataFrame([{
-        'username': username, 'password_hash': hash_password(password),
+# Session State Setup
+if 'profile' not in st.session_state or st.session_state['profile'] is None:
+    st.session_state['profile'] = {
         'weight': 70.0, 'height_cm': 175.0, 'age': 25, 'gender': 'Male',
         'experience': 'Beginner', 'goal': 'General fitness', 'target_body_part': 'Full Body',
         'plan_days': 7, 'activity_str': 'Active', 'diet_type': 'Standard', 'injury_status': 'None'
-    }])
-    df = pd.concat([df, new_user], ignore_index=True)
-    df.to_csv(USER_DB_PATH, index=False)
-    return True
+    }
 
-def verify_user(username, password):
-    df = pd.read_csv(USER_DB_PATH)
-    user_row = df[df['username'] == username]
-    if not user_row.empty:
-        if user_row.iloc[0]['password_hash'] == hash_password(password):
-            return True
-    return False
-
-def get_user_profile(username):
-    df = pd.read_csv(USER_DB_PATH)
-    user_row = df[df['username'] == username]
-    if not user_row.empty:
-        return user_row.iloc[0].to_dict()
-    return None
-
-def update_user_profile(username, profile_data):
-    df = pd.read_csv(USER_DB_PATH)
-    # 强制转换为 object 类型，防止 Pandas 因新旧数据类型不完全匹配（如 float64 vs int64）而报错
-    df = df.astype(object)
-    idx = df.index[df['username'] == username].tolist()
-    if idx:
-        for k, v in profile_data.items():
-            df.at[idx[0], k] = v
-        df.to_csv(USER_DB_PATH, index=False)
-
-def add_rating(username, food_id, rating):
-    df = pd.read_csv(RATINGS_DB_PATH)
-    df['User_ID'] = df['User_ID'].astype(str)
-    df['Food_ID'] = df['Food_ID'].astype(str)
-    
-    username_str = str(username)
-    food_id_str = str(food_id)
-    
-    mask = (df['User_ID'] == username_str) & (df['Food_ID'] == food_id_str)
-    if mask.any():
-        df.loc[mask, 'Rating'] = rating
-    else:
-        new_rating = pd.DataFrame([{'User_ID': username_str, 'Food_ID': food_id_str, 'Rating': rating}])
-        df = pd.concat([df, new_rating], ignore_index=True)
-    df.to_csv(RATINGS_DB_PATH, index=False)
-
-init_datasets()
-
-# Session State Setup
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'username' not in st.session_state:
-    st.session_state['username'] = None
-if 'profile' not in st.session_state:
-    st.session_state['profile'] = None
-
-# ==========================================
-# AUTHENTICATION UI
-# ==========================================
-if not st.session_state['logged_in']:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.title("Welcome to AI Fitness 🤖")
-        tab_login, tab_register = st.tabs(["Login", "Register"])
-        
-        with tab_login:
-            with st.form("login_form"):
-                log_user = st.text_input("Username")
-                log_pass = st.text_input("Password", type="password")
-                if st.form_submit_button("Login"):
-                    if verify_user(log_user, log_pass):
-                        st.session_state['logged_in'] = True
-                        st.session_state['username'] = log_user
-                        st.session_state['profile'] = get_user_profile(log_user)
-                        st.rerun()
-                    else:
-                        st.error("Invalid username or password.")
-                        
-        with tab_register:
-            with st.form("register_form"):
-                reg_user = st.text_input("Choose a Username")
-                reg_pass = st.text_input("Choose a Password", type="password")
-                if st.form_submit_button("Register & Login"):
-                    if reg_user and reg_pass:
-                        if register_user(reg_user, reg_pass):
-                            st.success("Registration successful! Logging you in...")
-                            st.session_state['logged_in'] = True
-                            st.session_state['username'] = reg_user
-                            st.session_state['profile'] = get_user_profile(reg_user)
-                            st.rerun()
-                        else:
-                            st.error("Username already exists. Please choose another one.")
-                    else:
-                        st.error("Please fill in both fields.")
-    st.stop()
-
+if 'user_ratings' not in st.session_state:
+    st.session_state['user_ratings'] = []
 
 # ==========================================
 # MODEL DEFINITIONS
@@ -209,25 +96,23 @@ class DataPipeline:
             
         food_df['features'] = food_df['food_name'].fillna('') + ' ' + food_df['food_type'].fillna('')
         
-        # Pull real user ratings from dataset
-        db_ratings = pd.read_csv(RATINGS_DB_PATH)
-        db_ratings['Food_ID'] = pd.to_numeric(db_ratings['Food_ID'], errors='coerce')
+        # Inject synthetic base data 
+        np.random.seed(42)
+        random.seed(42)
+        food_ids = food_df['Food_ID'].tolist()
+        synth_data = []
+        for uid in range(1, 501):
+            num_ratings = random.randint(5, 15)
+            rated_items = random.sample(food_ids, min(num_ratings, len(food_ids)))
+            for item_id in rated_items:
+                synth_data.append([f"synth_{uid}", item_id, round(np.clip(np.random.normal(3.8, 1.0), 1.0, 5.0), 1)])
         
-        # Inject synthetic base data if real data is scarce
-        if len(db_ratings) < 500:
-            np.random.seed(42)
-            random.seed(42)
-            food_ids = food_df['Food_ID'].tolist()
-            synth_data = []
-            for uid in range(1, 51):
-                num_ratings = random.randint(5, 15)
-                rated_items = random.sample(food_ids, min(num_ratings, len(food_ids)))
-                for item_id in rated_items:
-                    synth_data.append([f"synth_{uid}", item_id, round(np.clip(np.random.normal(3.8, 1.0), 1.0, 5.0), 1)])
-            synth_df = pd.DataFrame(synth_data, columns=['User_ID', 'Food_ID', 'Rating'])
-            ratings_df = pd.concat([db_ratings, synth_df], ignore_index=True)
-        else:
-            ratings_df = db_ratings
+        ratings_df = pd.DataFrame(synth_data, columns=['User_ID', 'Food_ID', 'Rating'])
+        
+        # Append current session ratings
+        if st.session_state.get('user_ratings'):
+            session_ratings_df = pd.DataFrame(st.session_state['user_ratings'])
+            ratings_df = pd.concat([ratings_df, session_ratings_df], ignore_index=True)
             
         return food_df, ratings_df
 
@@ -357,7 +242,7 @@ def load_gym_data():
     except Exception as e:
         return None
 
-food_df, train_df = load_and_prepare_data(st.session_state['username'])
+food_df, train_df = load_and_prepare_data(len(st.session_state.get('user_ratings', [])))
 model_a, model_b, model_c = None, None, None
 if food_df is not None:
     model_a, model_b, model_c = train_models(food_df, train_df)
@@ -366,22 +251,13 @@ gym_df = load_gym_data()
 # ==========================================
 # MAIN APP LAYOUT
 # ==========================================
-current_user = st.session_state['username']
+current_user = "Guest"
 prof = st.session_state['profile']
 
-user_has_history = False
-if train_df is not None and not train_df.empty:
-    if str(current_user) in train_df['User_ID'].astype(str).values:
-        user_has_history = True
+user_has_history = len(st.session_state.get('user_ratings', [])) > 0
 
-colA, colB = st.columns([8, 1])
-with colA:
-    st.title("🤖 AI Fitness & Nutrition Companion")
-    st.markdown(f"*Welcome back, **{current_user}**! Let's team up to build a plan that fits your life.*")
-with colB:
-    if st.button("Logout"):
-        st.session_state.clear()
-        st.rerun()
+st.title("🤖 AI Fitness & Nutrition Companion")
+st.markdown(f"*Welcome! Let's team up to build a plan that fits your life.*")
 
 if 'toast_msg' in st.session_state:
     st.toast(st.session_state.pop('toast_msg'))
@@ -439,9 +315,8 @@ with st.sidebar:
                 'plan_days': plan_days, 'activity_str': activity_str, 'diet_type': diet_type,
                 'injury_status': injury_status
             }
-            update_user_profile(current_user, updated_profile)
             st.session_state['profile'] = updated_profile
-            st.success("Profile Saved to Dataset!")
+            st.success("Profile Saved!")
             st.rerun()
 
 # --- TAB 1: Profile & Metrics ---
@@ -608,7 +483,7 @@ with tab2:
                                         
                             if st.form_submit_button("✅ Batch Submit All Diet Ratings for this Day"):
                                 for f_id, r_val in ratings_to_save.items():
-                                    add_rating(current_user, f_id, r_val)
+                                    st.session_state['user_ratings'].append({'User_ID': current_user, 'Food_ID': f_id, 'Rating': r_val})
                                 st.cache_data.clear()
                                 st.cache_resource.clear()
                                 st.session_state['toast_msg'] = f"✅ Day {d} diet ratings saved successfully! AI models retrained."
@@ -729,7 +604,7 @@ with tab3:
                                         
                                     if st.form_submit_button("✅ Batch Submit All Gym Ratings for this Day"):
                                         for g_id, r_val in gym_ratings_to_save.items():
-                                            add_rating(current_user, f"GYM_{g_id}", r_val)
+                                            st.session_state['user_ratings'].append({'User_ID': current_user, 'Food_ID': f"GYM_{g_id}", 'Rating': r_val})
                                         st.cache_data.clear()
                                         st.cache_resource.clear()
                                         st.session_state['toast_msg'] = f"✅ Day {day} gym ratings saved successfully! AI models retrained."
