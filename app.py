@@ -400,7 +400,7 @@ with tab2:
                 pros = candidates_df['protein_g'].values
                 scores = candidates_df['current_score'].values
                 
-                def clean_name(name): return str(name).split(',')[0][:30].title() 
+                def clean_name(name): return str(name).replace(',', ' ')[:35].title() 
                 
                 if st.session_state.get('diet_plan_data') is None:
                     diet_plan_data = {}
@@ -428,15 +428,20 @@ with tab2:
                             item['Portion'] = 0.5; selected_items.append(item)
                             
                         # Top-up macros greedily
-                        for _ in range(50):
+                        for _ in range(100):
                             cur_cal = sum(x['calories'] * x['Portion'] for x in selected_items)
                             cur_pro = sum(x['protein_g'] * x['Portion'] for x in selected_items)
                             if cur_pro < target_protein_g:
-                                p_items = [x for x in selected_items if x['food_type'] in protein_types]
+                                p_items = [x for x in selected_items if x['food_type'] in protein_types and x['Portion'] < 2.5]
                                 if p_items: random.choice(p_items)['Portion'] += 0.5
-                                else: random.choice(selected_items)['Portion'] += 0.5
+                                else: 
+                                    valid_items = [x for x in selected_items if x['Portion'] < 2.5]
+                                    if valid_items: random.choice(valid_items)['Portion'] += 0.5
+                                    else: break
                             elif cur_cal < target_calories - 150:
-                                random.choice(selected_items)['Portion'] += 0.5
+                                valid_items = [x for x in selected_items if x['Portion'] < 2.5]
+                                if valid_items: random.choice(valid_items)['Portion'] += 0.5
+                                else: break
                             elif cur_cal > target_calories + 150:
                                 item = random.choice(selected_items)
                                 if item['Portion'] >= 1.0: item['Portion'] -= 0.5
