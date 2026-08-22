@@ -75,7 +75,7 @@ class DataPipeline:
         self.food_db_path = food_db_path
         
     def process(self):
-          try:
+        try:
             food_df = pd.read_csv(self.food_db_path)
             
             mask = ~food_df['food_name'].str.contains('baby|infant|toddler', case=False, na=False)
