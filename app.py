@@ -427,24 +427,40 @@ with tab2:
                         for item in o_pool[:random.randint(4, 5)]:
                             item['Portion'] = 0.5; selected_items.append(item)
                             
-                        # Top-up macros greedily
-                        for _ in range(100):
+                        # Smart Top-up macros greedily
+                        for _ in range(200):
                             cur_cal = sum(x['calories'] * x['Portion'] for x in selected_items)
                             cur_pro = sum(x['protein_g'] * x['Portion'] for x in selected_items)
-                            if cur_pro < target_protein_g:
-                                p_items = [x for x in selected_items if x['food_type'] in protein_types and x['Portion'] < 2.5]
+                            
+                            if cur_pro < target_protein_g and cur_cal < target_calories + 150:
+                                # Need protein AND have calorie budget
+                                p_items = [x for x in selected_items if x['protein_g']/(x['calories']+1) > 0.05 and x['Portion'] < 2.5]
                                 if p_items: random.choice(p_items)['Portion'] += 0.5
-                                else: 
+                                else:
                                     valid_items = [x for x in selected_items if x['Portion'] < 2.5]
                                     if valid_items: random.choice(valid_items)['Portion'] += 0.5
                                     else: break
+                            elif cur_cal > target_calories + 150:
+                                # Too many calories! Reduce the worst protein/calorie offenders
+                                c_items = [x for x in selected_items if x['Portion'] >= 1.0]
+                                if c_items:
+                                    # Sort by protein/calorie ratio (lowest first)
+                                    c_items.sort(key=lambda x: x['protein_g']/(x['calories']+1))
+                                    # Pick from the bottom 3 worst offenders randomly to avoid deterministic looping
+                                    random.choice(c_items[:min(3, len(c_items))])['Portion'] -= 0.5
+                                else: break
                             elif cur_cal < target_calories - 150:
+                                # Need calories, but protein is fine
                                 valid_items = [x for x in selected_items if x['Portion'] < 2.5]
                                 if valid_items: random.choice(valid_items)['Portion'] += 0.5
                                 else: break
-                            elif cur_cal > target_calories + 150:
-                                item = random.choice(selected_items)
-                                if item['Portion'] >= 1.0: item['Portion'] -= 0.5
+                            elif cur_pro < target_protein_g:
+                                # Busted calories, but still need protein? Force a reduction to make room!
+                                c_items = [x for x in selected_items if x['Portion'] >= 1.0]
+                                if c_items:
+                                    c_items.sort(key=lambda x: x['protein_g']/(x['calories']+1))
+                                    c_items[0]['Portion'] -= 0.5
+                                else: break
                             else: break
                             
                         selected_items = [x for x in selected_items if x['Portion'] > 0]
