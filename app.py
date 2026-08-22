@@ -527,6 +527,9 @@ with tab3:
     st.header("🏋️ AI Workout & Injury Prevention Engine")
     st.markdown("Generates a movement architecture tailored to your level and safe-zones.")
     
+    if injury_status != "None":
+        st.warning(f"🛡️ **SAFETY SHIELD ACTIVE**: The system will modify exercises to protect your **{injury_status}**.")
+    
     if user_has_history:
         gym_options = ["A", "B", "C"]
         gym_format_func = lambda x: f"Model {x}: " + ("Content-Based Filter" if x == 'A' else "Collaborative Filter" if x == 'B' else "SVD Matrix Factorization")
@@ -555,7 +558,7 @@ with tab3:
                 
                 effective_body_part = target_body_part
                 if injury_status == "Knee":
-                    g_df = g_df[g_df['BodyPart'] != 'Legs']
+                    g_df = g_df[~g_df['BodyPart'].isin(['Quadriceps', 'Hamstrings', 'Calves', 'Adductors', 'Abductors', 'Glutes'])]
                     if effective_body_part == "Legs": effective_body_part = "Full Body"
                 elif injury_status == "Back":
                     g_df = g_df[~g_df['BodyPart'].isin(['Lower Back', 'Middle Back'])]
