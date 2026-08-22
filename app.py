@@ -75,11 +75,18 @@ class DataPipeline:
         self.food_db_path = food_db_path
         
     def process(self):
-        try:
+          try:
             food_df = pd.read_csv(self.food_db_path)
+            
+
+            mask = ~food_df['food_name'].str.contains('baby|infant|toddler', case=False, na=False)
+            food_df = food_df[mask].reset_index(drop=True)
+          
+            
         except Exception as e:
             st.error(f"Error: Could not find '{self.food_db_path}'. Please check file path. {e}")
             return None, None
+
             
         required_food_cols = ['food_name', 'food_type', 'calories', 'protein_g']
         if not all(col in food_df.columns for col in required_food_cols):
