@@ -253,7 +253,9 @@ gym_df = load_gym_data()
 current_user = "Guest"
 prof = st.session_state['profile']
 
-user_has_history = len(st.session_state.get('user_ratings', [])) > 0
+user_ratings_list = st.session_state.get('user_ratings', [])
+user_has_diet_history = any(not str(r.get('Food_ID', '')).startswith('GYM_') for r in user_ratings_list)
+user_has_gym_history = any(str(r.get('Food_ID', '')).startswith('GYM_') for r in user_ratings_list)
 
 st.title("🤖 AI Fitness & Nutrition Companion")
 st.markdown(f"*Welcome! Let's team up to build a plan that fits your life.*")
@@ -351,13 +353,13 @@ with tab2:
     st.header("🥗 AI Smart Plate Builder")
     st.markdown("Our AI engines dynamically synthesize a diet tailored to your goals and macros.")
     
-    if user_has_history:
+    if user_has_diet_history:
         options = ["A", "B", "C"]
         format_func = lambda x: f"Model {x}: " + ("Content-Based Filter" if x == 'A' else "Collaborative Filter" if x == 'B' else "SVD Matrix Factorization")
     else:
         options = ["A"]
         format_func = lambda x: "Model A: Content-Based Filter (New User)"
-        st.info("🌱 **Cold Start Mode**: As a new user, only Content-Based Filtering is available. Rate meals to unlock Advanced AI Models (Collaborative & SVD)!")
+        st.info("🌱 **Cold Start Mode**: As a new user, only Content-Based Filtering is available. Rate meals below to establish your profile and unlock Advanced Models!")
         
     model_choice = st.radio("Select AI Engine for Nutrition", options=options, format_func=format_func, horizontal=True)
     st.markdown("---")
@@ -531,13 +533,13 @@ with tab3:
     if injury_status != "None":
         st.warning(f"🛡️ **SAFETY SHIELD ACTIVE**: The system will modify exercises to protect your **{injury_status}**.")
     
-    if user_has_history:
+    if user_has_gym_history:
         gym_options = ["A", "B", "C"]
         gym_format_func = lambda x: f"Model {x}: " + ("Content-Based Filter" if x == 'A' else "Collaborative Filter" if x == 'B' else "SVD Matrix Factorization")
     else:
         gym_options = ["A"]
         gym_format_func = lambda x: "Model A: Content-Based Filter (New User)"
-        st.info("🌱 **Cold Start Mode**: As a new user, only Content-Based Filtering is available. Rate meals in the Diet tab to establish your profile and unlock Advanced Models here!")
+        st.info("🌱 **Cold Start Mode**: As a new user, only Content-Based Filtering is available. Rate exercises below to establish your profile and unlock Advanced Models!")
         
     workout_model_choice = st.radio("Select AI Engine for Workout", options=gym_options, 
                             format_func=gym_format_func,
