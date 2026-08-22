@@ -93,6 +93,9 @@ class DataPipeline:
         else:
             food_df.rename(columns=lambda x: 'Food_ID' if x.lower() == 'food_id' else x, inplace=True)
             
+        # Filter out all baby food items
+        food_df = food_df[~food_df['food_name'].str.contains('baby', case=False, na=False)]
+            
         food_df['features'] = food_df['food_name'].fillna('') + ' ' + food_df['food_type'].fillna('')
         
         # Inject synthetic base data 
