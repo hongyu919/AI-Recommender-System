@@ -392,6 +392,7 @@ with tab2:
                 
                 candidates_df = df_temp.sort_values('current_score', ascending=False).head(50).copy()
                 if diet_type == 'Vegan': protein_types = ['Other', 'Grains']
+                elif diet_type == 'Vegetarian': protein_types = ['Dairy', 'Other']
                 else: protein_types = ['Meat & Poultry', 'Seafood', 'Dairy']
                     
                 is_staple = candidates_df['food_type'].isin(['Grains']).astype(int).values
@@ -572,6 +573,10 @@ with tab3:
                     gym_top_similar_users = model_b.user_similarity_df[current_user].sort_values(ascending=False).drop(current_user).head(5)
 
                 def score_workout_with_algorithm(row, user_id=current_user):
+                    type_match = 1.2 if row.get('Type') in target_types else 0.8
+                    part_match = 1.5 if (effective_body_part == "Full Body" or row.get('BodyPart') == effective_body_part) else 0.7
+                    exp_match = 1.2 if row.get('Level') == experience else 0.9
+                    
                     if workout_model_choice == 'A':
                         user_features = f"{effective_body_part} {' '.join(target_types)} {experience}"
                         item_features = f"{row.get('BodyPart', '')} {row.get('Type', '')} {row.get('Level', '')}"
@@ -582,9 +587,11 @@ with tab3:
                         similarity = len(intersection) / len(union) if union else 0.0
                         return similarity * 0.7 + (row['Rating'] / 10.0) * 0.3
                     elif workout_model_choice == 'B':
-                        return model_b.predict(user_id, f"GYM_{row.get('Title')}", gym_top_similar_users) / 5.0
+                        raw_score = model_b.predict(user_id, f"GYM_{row.get('Title')}", gym_top_similar_users) / 5.0
+                        return min(raw_score * type_match * part_match * exp_match, 1.0)
                     elif workout_model_choice == 'C':
-                        return model_c.predict(user_id, f"GYM_{row.get('Title')}") / 5.0
+                        raw_score = model_c.predict(user_id, f"GYM_{row.get('Title')}") / 5.0
+                        return min(raw_score * type_match * part_match * exp_match, 1.0)
                     return 0.5
                 
                 g_df['AI_Match_Score'] = g_df.apply(score_workout_with_algorithm, axis=1)
