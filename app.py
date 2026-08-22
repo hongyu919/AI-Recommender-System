@@ -77,14 +77,9 @@ class DataPipeline:
     def process(self):
         try:
             food_df = pd.read_csv(self.food_db_path)
-            
-            mask = ~food_df['food_name'].str.contains('baby|infant|toddler', case=False, na=False)
-            food_df = food_df[mask].reset_index(drop=True)
-            
         except Exception as e:
             st.error(f"Error: Could not find '{self.food_db_path}'. Please check file path. {e}")
             return None, None
-
             
         required_food_cols = ['food_name', 'food_type', 'calories', 'protein_g']
         if not all(col in food_df.columns for col in required_food_cols):
@@ -569,6 +564,10 @@ with tab3:
                     g_df = g_df[g_df['BodyPart'] != 'Shoulders']
                     if effective_body_part in ["Shoulder", "Chest"]: effective_body_part = "Legs"
 
+                gym_top_similar_users = None
+                if workout_model_choice == 'B' and model_b.user_item_matrix is not None and current_user in model_b.user_item_matrix.index:
+                    gym_top_similar_users = model_b.user_similarity_df[current_user].sort_values(ascending=False).drop(current_user).head(5)
+
                 def score_workout_with_algorithm(row, user_id=current_user):
                     if workout_model_choice == 'A':
                         user_features = f"{effective_body_part} {' '.join(target_types)} {experience}"
@@ -580,20 +579,9 @@ with tab3:
                         similarity = len(intersection) / len(union) if union else 0.0
                         return similarity * 0.7 + (row['Rating'] / 10.0) * 0.3
                     elif workout_model_choice == 'B':
-                        base_rating = row['Rating'] if row['Rating'] > 0 else 5.0
-                        type_match = 1.2 if row.get('Type') in target_types else 0.8
-                        part_match = 1.3 if (effective_body_part == "Full Body" or row.get('BodyPart') == effective_body_part) else 0.7
-                        predicted_score = (base_rating / 10.0) * type_match * part_match
-                        return min(predicted_score, 1.0)
+                        return model_b.predict(user_id, f"GYM_{row.get('Title')}", gym_top_similar_users) / 5.0
                     elif workout_model_choice == 'C':
-                        user_embedding = np.array([hash(f"user_{user_id}_{effective_body_part}") % 100 / 100.0, 0.8, 0.6])
-                        item_embedding = np.array([
-                            hash(str(row.get('Title'))) % 100 / 100.0,
-                            1.0 if row.get('Type') in target_types else 0.2,
-                            1.0 if (effective_body_part == "Full Body" or row.get('BodyPart') == effective_body_part) else 0.3
-                        ])
-                        svd_score = np.dot(user_embedding, item_embedding) / 3.0
-                        return float(np.clip(svd_score, 0.0, 1.0))
+                        return model_c.predict(user_id, f"GYM_{row.get('Title')}") / 5.0
                     return 0.5
                 
                 g_df['AI_Match_Score'] = g_df.apply(score_workout_with_algorithm, axis=1)
