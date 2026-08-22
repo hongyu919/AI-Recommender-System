@@ -78,10 +78,8 @@ class DataPipeline:
           try:
             food_df = pd.read_csv(self.food_db_path)
             
-
             mask = ~food_df['food_name'].str.contains('baby|infant|toddler', case=False, na=False)
             food_df = food_df[mask].reset_index(drop=True)
-          
             
         except Exception as e:
             st.error(f"Error: Could not find '{self.food_db_path}'. Please check file path. {e}")
