@@ -81,34 +81,7 @@ class DataPipeline:
             st.error(f"Error: Could not find '{self.food_db_path}'. Please check file path. {e}")
             return None, None
             
-    
-        if 'Food' in food_df.columns:
-           
-            food_df = food_df.rename(columns={
-                'Food': 'food_name',
-                'Calories': 'calories',
-                'Protein (g)': 'protein_g'
-            })
-            
-            
-            def assign_food_type(name):
-                name = str(name).lower()
-                if any(x in name for x in ['salmon', 'sardines', 'mackerel', 'tuna', 'clams']):
-                    return 'Seafood'
-                elif any(x in name for x in ['chicken', 'beef', 'pork', 'turkey']):
-                    return 'Meat & Poultry'
-                elif any(x in name for x in ['yogurt', 'cheese', 'milk', 'eggs']):
-                    return 'Dairy'
-                elif any(x in name for x in ['quinoa', 'oats', 'rice', 'bread', 'pasta', 'buckwheat']):
-                    return 'Grains'
-                else:
-                    return 'Other'
-            
-            food_df['food_type'] = food_df['food_name'].apply(assign_food_type)
-        # ==========================================
-            
         required_food_cols = ['food_name', 'food_type', 'calories', 'protein_g']
-
         if not all(col in food_df.columns for col in required_food_cols):
             st.error("Food dataset is missing required columns! Please check the CSV format.")
             return None, None
